@@ -42,8 +42,9 @@ export default function SignUpScreen() {
   ) => {
     setIsSocialSubmitting(true);
     try {
-      const { createdSessionId } = await startSSOFlow({ strategy });
-      if (createdSessionId) {
+      const { createdSessionId, setActive } = await startSSOFlow({ strategy });
+      if (createdSessionId && setActive) {
+        await setActive({ session: createdSessionId });
         router.replace("/");
       }
     } catch (err: unknown) {

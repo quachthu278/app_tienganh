@@ -36,6 +36,11 @@ export default function SignInScreen() {
   const [verifyError, setVerifyError] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
   const isVerifyingRef = useRef(false);
+  // Tracks which factor is currently awaiting verification so handleVerify
+  // and handleResend use the correct SDK method.
+  const [activeFactorStrategy, setActiveFactorStrategy] = useState<
+    "email_code" | "phone_code" | "totp" | "backup_code" | null
+  >(null);
 
   // ── Social Auth ──
   const handleSocialAuth = async (
@@ -43,8 +48,9 @@ export default function SignInScreen() {
   ) => {
     setIsSocialSubmitting(true);
     try {
-      const { createdSessionId } = await startSSOFlow({ strategy });
-      if (createdSessionId) {
+      const { createdSessionId, setActive } = await startSSOFlow({ strategy });
+      if (createdSessionId && setActive) {
+        await setActive({ session: createdSessionId });
         router.replace("/");
       }
     } catch (err: unknown) {
@@ -88,14 +94,48 @@ export default function SignInScreen() {
           await signIn.finalize();
         }
         router.replace("/");
-      } else if (
-        signIn.status === "needs_first_factor" ||
-        signIn.status === "needs_second_factor"
-      ) {
-        // Multi-factor or email verification code needed
+      } else if (signIn.status === "needs_first_factor") {
+        // Select the email_code factor from the supported list.
+        const emailFactor = signIn.supportedFirstFactors?.find(
+          (f) => f.strategy === "email_code"
+        );
+        if (!emailFactor) {
+          Alert.alert(
+            "Sign In",
+            "Email verification is not available for this account. Please use a supported sign-in method."
+          );
+          return;
+        }
         const { error: sendError } = await signIn.emailCode.sendCode();
         if (sendError) {
           Alert.alert("Error", sendError.longMessage || sendError.message);
+          return;
+        }
+        setActiveFactorStrategy("email_code");
+        setShowVerification(true);
+      } else if (signIn.status === "needs_second_factor") {
+        // Dispatch the correct MFA send method based on the first supported
+        // second factor. Supported: totp, phone_code, backup_code.
+        const secondFactor = signIn.supportedSecondFactors?.[0];
+        const strategy = secondFactor?.strategy;
+
+        if (strategy === "phone_code") {
+          const { error: sendError } = await signIn.mfa.sendPhoneCode();
+          if (sendError) {
+            Alert.alert("Error", sendError.longMessage || sendError.message);
+            return;
+          }
+          setActiveFactorStrategy("phone_code");
+        } else if (strategy === "totp") {
+          // TOTP doesn't require a send step; show the input immediately.
+          setActiveFactorStrategy("totp");
+        } else if (strategy === "backup_code") {
+          setActiveFactorStrategy("backup_code");
+        } else {
+          Alert.alert(
+            "Sign In",
+            "Multi-factor authentication is required but no supported method is configured."
+          );
           return;
         }
         setShowVerification(true);
@@ -109,7 +149,7 @@ export default function SignInScreen() {
     }
   };
 
-  // ── Step 2: Verify the email code ──
+  // ── Step 2: Verify the code using the correct factor method ──
   const handleVerify = useCallback(
     async (code: string) => {
       if (!signIn || isVerifyingRef.current || code.length < 6) return;
@@ -118,9 +158,21 @@ export default function SignInScreen() {
       setIsVerifying(true);
       setVerifyError("");
       try {
-        const { error: verifyErr } = await signIn.emailCode.verifyCode({
-          code,
-        });
+        let verifyErr: { longMessage?: string; message?: string } | null = null;
+
+        if (activeFactorStrategy === "email_code") {
+          ({ error: verifyErr } = await signIn.emailCode.verifyCode({ code }));
+        } else if (activeFactorStrategy === "phone_code") {
+          ({ error: verifyErr } = await signIn.mfa.verifyPhoneCode({ code }));
+        } else if (activeFactorStrategy === "totp") {
+          ({ error: verifyErr } = await signIn.mfa.verifyTOTP({ code }));
+        } else if (activeFactorStrategy === "backup_code") {
+          ({ error: verifyErr } = await signIn.mfa.verifyBackupCode({ code }));
+        } else {
+          setVerifyError("No verification factor selected. Please try signing in again.");
+          return;
+        }
+
         if (verifyErr) {
           setVerifyError(
             verifyErr.longMessage || verifyErr.message || "Invalid code."
@@ -153,20 +205,25 @@ export default function SignInScreen() {
         setIsVerifying(false);
       }
     },
-    [signIn]
+    [signIn, activeFactorStrategy]
   );
 
-  // ── Resend verification code ──
+  // ── Resend verification code (only applicable for email_code / phone_code) ──
   const handleResend = useCallback(async () => {
     if (!signIn || isVerifyingRef.current) return;
-    const { error } = await signIn.emailCode.sendCode();
-    if (error) {
-      Alert.alert(
-        "Error",
-        error.longMessage || error.message || "Failed to resend code."
-      );
+    if (activeFactorStrategy === "email_code") {
+      const { error } = await signIn.emailCode.sendCode();
+      if (error) {
+        Alert.alert("Error", error.longMessage || error.message || "Failed to resend code.");
+      }
+    } else if (activeFactorStrategy === "phone_code") {
+      const { error } = await signIn.mfa.sendPhoneCode();
+      if (error) {
+        Alert.alert("Error", error.longMessage || error.message || "Failed to resend code.");
+      }
     }
-  }, [signIn]);
+    // TOTP and backup_code have no resend step.
+  }, [signIn, activeFactorStrategy]);
 
   // ── Safe back navigation ──
   const handleBack = useCallback(() => {
