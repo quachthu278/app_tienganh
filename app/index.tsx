@@ -1,125 +1,163 @@
-import { ScrollView, Text, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { SUPPORTED_LANGUAGES } from "@/data/languages";
+import { useLanguageStore, useProgressStore } from "@/store";
+import { useAuth } from "@clerk/expo";
+import { router } from "expo-router";
+import React from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-/**
- * Design System Preview Screen
- *
- * Showcases all Lingua design tokens — colors, typography, and utilities.
- * Remove or replace this screen once you start building real features.
- */
-export default function Index() {
+export default function HomeScreen() {
+  const { signOut } = useAuth();
+  const { selectedLanguageId, clearLanguage } = useLanguageStore();
+  const { resetProgress } = useProgressStore();
+  const language = SUPPORTED_LANGUAGES.find((l) => l.id === selectedLanguageId);
+
+  const handleSignOut = async () => {
+    // Clear this user's progress before signing out so the next account
+    // cannot read stale XP, streak, or completedLessonIds.
+    resetProgress();
+    await AsyncStorage.removeItem("lingo-progress-storage");
+    await signOut();
+    router.replace("/onboarding");
+  };
+
+  const handleClearLanguage = async () => {
+    await clearLanguage();
+    router.replace("/language-selection");
+  };
+
   return (
-    <ScrollView className="flex-1 bg-background">
-      <View className="px-4 pt-12 pb-8 gap-8">
-        {/* ── Brand Header ── */}
-        <View>
-          <Text className="text--h1">lingua</Text>
-          <Text className="text--body-md text-text-secondary">
-            Design System Preview
-          </Text>
-        </View>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        {/* App Title */}
+        <Text style={styles.title}>Lingua</Text>
 
-        {/* ── Typography Scale ── */}
-        <View className="gap-3">
-          <Text className="text--caption text-brand-purple uppercase tracking-widest">
-            Typography
-          </Text>
-          <Text className="text--h1">H1 — Screen Title</Text>
-          <Text className="text--h2">H2 — Section Title</Text>
-          <Text className="text--h3">H3 — Card Title</Text>
-          <Text className="text--h4">H4 — Subheading</Text>
-          <Text className="text--body-lg">Body Large — Important content</Text>
-          <Text className="text--body-md">Body Medium — Body text</Text>
-          <Text className="text--body-sm">Body Small — Supporting text</Text>
-          <Text className="text--caption">Caption — Labels, meta text</Text>
-        </View>
-
-        {/* ── Primary Colors ── */}
-        <View className="gap-3">
-          <Text className="text--caption text-brand-purple uppercase tracking-widest">
-            Primary Colors
-          </Text>
-          <View className="flex-row gap-3">
-            <View className="flex-1 gap-1">
-              <View className="h-16 rounded-lg bg-brand-purple" />
-              <Text className="text--caption text-text-secondary">
-                Purple
-              </Text>
-              <Text className="text--caption text-text-primary">#6C4EF5</Text>
-            </View>
-            <View className="flex-1 gap-1">
-              <View className="h-16 rounded-lg bg-brand-deep-purple" />
-              <Text className="text--caption text-text-secondary">
-                Deep Purple
-              </Text>
-              <Text className="text--caption text-text-primary">#5B3BF6</Text>
-            </View>
-            <View className="flex-1 gap-1">
-              <View className="h-16 rounded-lg bg-brand-blue" />
-              <Text className="text--caption text-text-secondary">Blue</Text>
-              <Text className="text--caption text-text-primary">#4D8BFF</Text>
-            </View>
-            <View className="flex-1 gap-1">
-              <View className="h-16 rounded-lg bg-brand-green" />
-              <Text className="text--caption text-text-secondary">Green</Text>
-              <Text className="text--caption text-text-primary">#21C16B</Text>
-            </View>
+        {/* Selected Language Display */}
+        {language && (
+          <View style={styles.languageCard}>
+            <Text style={styles.languageFlag}>{language.flag}</Text>
+            <Text style={styles.languageName}>{language.name}</Text>
+            <Text style={styles.languageNative}>{language.nativeName}</Text>
           </View>
-        </View>
+        )}
 
-        {/* ── Semantic Colors ── */}
-        <View className="gap-3">
-          <Text className="text--caption text-brand-purple uppercase tracking-widest">
-            Semantic Colors
-          </Text>
-          <View className="flex-row gap-3">
-            <View className="flex-1 gap-1">
-              <View className="h-16 rounded-lg bg-success" />
-              <Text className="text--caption text-text-secondary">Success</Text>
-            </View>
-            <View className="flex-1 gap-1">
-              <View className="h-16 rounded-lg bg-warning" />
-              <Text className="text--caption text-text-secondary">Warning</Text>
-            </View>
-            <View className="flex-1 gap-1">
-              <View className="h-16 rounded-lg bg-streak" />
-              <Text className="text--caption text-text-secondary">Streak</Text>
-            </View>
-            <View className="flex-1 gap-1">
-              <View className="h-16 rounded-lg bg-error" />
-              <Text className="text--caption text-text-secondary">Error</Text>
-            </View>
-          </View>
-        </View>
+        {/* Primary Action Button */}
+        <TouchableOpacity
+          style={styles.chooseButton}
+          activeOpacity={0.85}
+          onPress={() => router.push("/language-selection")}
+        >
+          <Text style={styles.chooseButtonText}>Choose a Language</Text>
+        </TouchableOpacity>
 
-        {/* ── Neutrals ── */}
-        <View className="gap-3">
-          <Text className="text--caption text-brand-purple uppercase tracking-widest">
-            Neutrals
-          </Text>
-          <View className="flex-row gap-3">
-            <View className="flex-1 gap-1">
-              <View className="h-16 rounded-lg bg-text-primary" />
-              <Text className="text--caption text-text-secondary">
-                Text Primary
-              </Text>
-            </View>
-            <View className="flex-1 gap-1">
-              <View className="h-16 rounded-lg bg-text-secondary" />
-              <Text className="text--caption text-text-secondary">
-                Text Secondary
-              </Text>
-            </View>
-            <View className="flex-1 gap-1">
-              <View className="h-16 rounded-lg bg-border border border-border" />
-              <Text className="text--caption text-text-secondary">Border</Text>
-            </View>
-            <View className="flex-1 gap-1">
-              <View className="h-16 rounded-lg bg-surface border border-border" />
-              <Text className="text--caption text-text-secondary">Surface</Text>
-            </View>
-          </View>
-        </View>
+        {/* Secondary Action: Sign Out */}
+        <TouchableOpacity
+          style={styles.textButton}
+          activeOpacity={0.6}
+          onPress={handleSignOut}
+        >
+          <Text style={styles.signOutText}>Sign Out</Text>
+        </TouchableOpacity>
+
+        {/* Test Utility: Clear Language (Test) */}
+        <TouchableOpacity
+          style={styles.textButton}
+          activeOpacity={0.6}
+          onPress={handleClearLanguage}
+        >
+          <Text style={styles.clearText}>Clear Language (Test)</Text>
+        </TouchableOpacity>
       </View>
-    </ScrollView>
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#F9FAFC",
+  },
+  container: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  title: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 32,
+    lineHeight: 40,
+    color: "#6C4EF5",
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  chooseButton: {
+    backgroundColor: "#6C4EF5",
+    paddingVertical: 14,
+    paddingHorizontal: 36,
+    borderRadius: 20,
+    width: "100%",
+    maxWidth: 240,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#6C4EF5",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+    marginBottom: 16,
+  },
+  chooseButtonText: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 16,
+    color: "#FFFFFF",
+    lineHeight: 22,
+    textAlign: "center",
+  },
+  textButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  signOutText: {
+    fontFamily: "Poppins_500Medium",
+    fontSize: 14,
+    color: "#6B7280",
+    textAlign: "center",
+  },
+  clearText: {
+    fontFamily: "Poppins_500Medium",
+    fontSize: 14,
+    color: "#EF4444",
+    textAlign: "center",
+  },
+  languageCard: {
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 24,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  languageFlag: {
+    fontSize: 48,
+  },
+  languageName: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 18,
+    color: "#1F2937",
+    textAlign: "center",
+  },
+  languageNative: {
+    fontFamily: "Poppins_500Medium",
+    fontSize: 14,
+    color: "#6B7280",
+    textAlign: "center",
+  },
+});
