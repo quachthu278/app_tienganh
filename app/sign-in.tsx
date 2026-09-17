@@ -390,6 +390,7 @@ export default function SignInScreen() {
         onResend={handleResend}
         error={verifyError}
         isLoading={isVerifying}
+        factorStrategy={activeFactorStrategy ?? "email_code"}
       />
     </SafeAreaView>
   );

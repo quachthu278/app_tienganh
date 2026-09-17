@@ -1,5 +1,6 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SUPPORTED_LANGUAGES } from "@/data/languages";
-import { useLanguageStore } from "@/store";
+import { useLanguageStore, useProgressStore } from "@/store";
 import { useAuth } from "@clerk/expo";
 import { router } from "expo-router";
 import React from "react";
@@ -9,9 +10,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export default function HomeScreen() {
   const { signOut } = useAuth();
   const { selectedLanguageId, clearLanguage } = useLanguageStore();
+  const { resetProgress } = useProgressStore();
   const language = SUPPORTED_LANGUAGES.find((l) => l.id === selectedLanguageId);
 
   const handleSignOut = async () => {
+    // Clear this user's progress before signing out so the next account
+    // cannot read stale XP, streak, or completedLessonIds.
+    resetProgress();
+    await AsyncStorage.removeItem("lingo-progress-storage");
     await signOut();
     router.replace("/onboarding");
   };

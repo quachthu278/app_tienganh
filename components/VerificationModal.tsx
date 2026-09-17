@@ -11,16 +11,20 @@ import {
   View,
 } from "react-native";
 
+type FactorStrategy = "email_code" | "phone_code" | "totp" | "backup_code";
+
 interface Props {
   visible: boolean;
   onClose: () => void;
   /** Called with the 6-digit code string when all digits are entered. */
   onVerify: (code: string) => Promise<void>;
-  /** Optional: called when the user taps "Resend code" */
+  /** Optional: called when the user taps "Resend code" — hidden for totp/backup_code */
   onResend?: () => Promise<void>;
   /** Error message to display below the inputs */
   error?: string;
   isLoading?: boolean;
+  /** Controls the icon, title, and subtitle shown in the modal */
+  factorStrategy?: FactorStrategy;
 }
 
 const CODE_LENGTH = 6;
@@ -32,9 +36,46 @@ export default function VerificationModal({
   onResend,
   error,
   isLoading = false,
+  factorStrategy = "email_code",
 }: Props) {
   const [code, setCode] = useState<string[]>(Array(CODE_LENGTH).fill(""));
   const inputRefs = useRef<(TextInput | null)[]>(Array(CODE_LENGTH).fill(null));
+
+  // Derive display content from the active factor strategy
+  const factorContent: Record<
+    FactorStrategy,
+    { icon: string; title: string; subtitle: string }
+  > = {
+    email_code: {
+      icon: "📧",
+      title: "Check your email",
+      subtitle:
+        "We sent a verification code to your email. Enter the 6-digit code below.",
+    },
+    phone_code: {
+      icon: "📱",
+      title: "Check your phone",
+      subtitle:
+        "We sent a verification code via SMS. Enter the 6-digit code below.",
+    },
+    totp: {
+      icon: "🔐",
+      title: "Authenticator code",
+      subtitle:
+        "Open your authenticator app and enter the 6-digit code shown for this account.",
+    },
+    backup_code: {
+      icon: "🗝️",
+      title: "Backup code",
+      subtitle:
+        "Enter one of your saved backup codes. Each code can only be used once.",
+    },
+  };
+  const { icon, title, subtitle } = factorContent[factorStrategy];
+
+  // Only email_code and phone_code support a resend action
+  const canResend =
+    factorStrategy === "email_code" || factorStrategy === "phone_code";
 
   // Reset code when modal opens and focus first input
   useEffect(() => {
@@ -120,15 +161,12 @@ export default function VerificationModal({
 
           {/* Icon */}
           <View style={styles.iconContainer}>
-            <Text style={styles.iconEmoji}>📧</Text>
+            <Text style={styles.iconEmoji}>{icon}</Text>
           </View>
 
           {/* Text */}
-          <Text style={styles.title}>Check your email</Text>
-          <Text style={styles.subtitle}>
-            We sent a verification code to your email. Enter the 6-digit code
-            below.
-          </Text>
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.subtitle}>{subtitle}</Text>
 
           {/* Code inputs */}
           <View style={styles.codeRow}>
@@ -172,18 +210,20 @@ export default function VerificationModal({
             <Text style={styles.errorText}>{error}</Text>
           )}
 
-          {/* Resend */}
-          <TouchableOpacity
-            style={styles.resendBtn}
-            activeOpacity={0.7}
-            onPress={handleResend}
-            disabled={isLoading}
-          >
-            <Text style={styles.resendText}>
-              Didn&apos;t receive it?{" "}
-              <Text style={styles.resendLink}>Resend code</Text>
-            </Text>
-          </TouchableOpacity>
+          {/* Resend — only for factors that support sending a code */}
+          {canResend && (
+            <TouchableOpacity
+              style={styles.resendBtn}
+              activeOpacity={0.7}
+              onPress={handleResend}
+              disabled={isLoading}
+            >
+              <Text style={styles.resendText}>
+                Didn&apos;t receive it?{" "}
+                <Text style={styles.resendLink}>Resend code</Text>
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </KeyboardAvoidingView>
     </Modal>

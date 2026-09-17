@@ -10,22 +10,30 @@ interface ProgressState {
   hasHydrated: boolean;
   addXp: (amount: number) => void;
   completeLesson: (lessonId: string) => void;
+  resetProgress: () => void;
   setHasHydrated: (state: boolean) => void;
 }
+
+const DEFAULT_STATE = {
+  xp: 0,
+  dailyXpGoal: 20,
+  streak: 0,
+  completedLessonIds: [] as string[],
+  hasHydrated: false,
+};
 
 export const useProgressStore = create<ProgressState>()(
   persist(
     (set) => ({
-      xp: 15,
-      dailyXpGoal: 20,
-      streak: 12,
-      completedLessonIds: ["lesson-es-201"],
-      hasHydrated: false,
+      ...DEFAULT_STATE,
       addXp: (amount: number) => set((state) => ({ xp: state.xp + amount })),
       completeLesson: (lessonId: string) =>
         set((state) => ({
           completedLessonIds: [...state.completedLessonIds, lessonId],
         })),
+      // Call before sign-out to prevent the next account from reading
+      // stale XP, streak, or completedLessonIds from the previous user.
+      resetProgress: () => set({ ...DEFAULT_STATE, hasHydrated: true }),
       setHasHydrated: (state: boolean) => set({ hasHydrated: state }),
     }),
     {

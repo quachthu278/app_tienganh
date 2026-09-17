@@ -9,38 +9,11 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useUser } from "@clerk/expo";
+import { router } from "expo-router";
 import { useLanguageStore, useProgressStore } from "@/store";
 import { SUPPORTED_LANGUAGES } from "@/data/languages";
 import { LESSONS } from "@/data/lessons";
 import { images } from "@/constants/images";
-
-// ─── Today's Plan Items ───────────────────────────────────────────────────────
-const TODAY_PLAN = [
-  {
-    id: "plan-1",
-    icon: "📖",
-    iconBg: "#6C4EF5",
-    title: "Lesson",
-    subtitle: "At the café",
-    lessonId: "lesson-es-201",
-  },
-  {
-    id: "plan-2",
-    icon: "🎧",
-    iconBg: "#6C4EF5",
-    title: "AI Conversation",
-    subtitle: "Talk about your day",
-    lessonId: "lesson-es-202",
-  },
-  {
-    id: "plan-3",
-    icon: "💬",
-    iconBg: "#EF4444",
-    title: "New words",
-    subtitle: "10 words",
-    lessonId: null,
-  },
-];
 
 export default function HomeScreen() {
   const { user } = useUser();
@@ -51,13 +24,48 @@ export default function HomeScreen() {
   const firstName = user?.firstName ?? user?.username ?? "Learner";
   const xpProgress = Math.min(xp / dailyXpGoal, 1);
 
-  // Find the next incomplete lesson for the selected language
+  // Derive lessons for the selected language
   const languageLessons = selectedLanguageId
     ? LESSONS.filter((l) => l.unitId.startsWith(`unit-${selectedLanguageId}`))
     : [];
+
+  // Next incomplete lesson — drives the Continue button
   const nextLesson = languageLessons.find(
     (l) => !completedLessonIds.includes(l.id)
   );
+
+  // Derive today's plan from actual lesson data so it reflects the selected
+  // language instead of hardcoded Spanish values.
+  const standardLesson = languageLessons.find((l) => l.type === "standard");
+  const aiLesson = languageLessons.find((l) => l.type === "audio_ai");
+  const vocabCount = standardLesson?.vocabulary.length ?? 10;
+
+  const todayPlan = [
+    {
+      id: "plan-1",
+      icon: "📖",
+      iconBg: "#6C4EF5",
+      title: "Lesson",
+      subtitle: standardLesson?.title ?? "Start your first lesson",
+      lessonId: standardLesson?.id ?? null,
+    },
+    {
+      id: "plan-2",
+      icon: "🎧",
+      iconBg: "#6C4EF5",
+      title: "AI Conversation",
+      subtitle: aiLesson?.title ?? "Practice speaking",
+      lessonId: aiLesson?.id ?? null,
+    },
+    {
+      id: "plan-3",
+      icon: "💬",
+      iconBg: "#EF4444",
+      title: "New words",
+      subtitle: `${vocabCount} words`,
+      lessonId: null,
+    },
+  ];
 
   return (
     // SafeAreaView does not support className — use inline style
@@ -152,16 +160,25 @@ export default function HomeScreen() {
             <Text className="font-[Poppins_400Regular] text-[13px] text-white/80 mb-[14px]">
               A1 • Unit 3
             </Text>
-            {/* TouchableOpacity pressed state → StyleSheet */}
-            <TouchableOpacity
-              className="bg-white rounded-3xl py-[10px] px-6 self-start"
-              style={styles.continueButtonShadow}
-              activeOpacity={0.85}
-            >
-              <Text className="font-[Poppins_600SemiBold] text-[14px] text-[#6C4EF5]">
-                Continue
-              </Text>
-            </TouchableOpacity>
+            {/* Show Continue only when an incomplete lesson exists */}
+            {nextLesson ? (
+              <TouchableOpacity
+                className="bg-white rounded-3xl py-[10px] px-6 self-start"
+                style={styles.continueButtonShadow}
+                activeOpacity={0.85}
+                onPress={() => router.push(`/lesson/${nextLesson.id}`)}
+              >
+                <Text className="font-[Poppins_600SemiBold] text-[14px] text-[#6C4EF5]">
+                  Continue
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <View className="bg-white/40 rounded-3xl py-[10px] px-6 self-start">
+                <Text className="font-[Poppins_600SemiBold] text-[14px] text-white/70">
+                  All done! 🎉
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Palace Image — fixed size → StyleSheet */}
@@ -177,7 +194,8 @@ export default function HomeScreen() {
           {/* Section Header */}
           <View className="flex-row items-center justify-between mb-3">
             <Text className="font-[Poppins_700Bold] text-[17px] text-[#0D132B]">
-              Today's plan
+              {/* &apos; satisfies react/no-unescaped-entities */}
+              Today&apos;s plan
             </Text>
             <TouchableOpacity activeOpacity={0.7}>
               <Text className="font-[Poppins_600SemiBold] text-[14px] text-[#6C4EF5]">
@@ -186,8 +204,8 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Plan Items */}
-          {TODAY_PLAN.map((item, index) => {
+          {/* Plan Items — derived from selected language lessons */}
+          {todayPlan.map((item, index) => {
             const isDone = item.lessonId
               ? completedLessonIds.includes(item.lessonId)
               : false;
@@ -195,7 +213,7 @@ export default function HomeScreen() {
               <View
                 key={item.id}
                 className={`flex-row items-center py-[14px] ${
-                  index < TODAY_PLAN.length - 1
+                  index < todayPlan.length - 1
                     ? "border-b border-[#F3F4F6]"
                     : ""
                 }`}
@@ -283,7 +301,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 6,
   },
-  // Shadow for continue button
+  // Shadow for continue button — TouchableOpacity pressed states need StyleSheet
   continueButtonShadow: {
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
