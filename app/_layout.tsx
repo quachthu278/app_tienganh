@@ -14,17 +14,21 @@ import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { Platform, Text, View } from "react-native";
 
+import { useLanguageStore } from "@/store";
+
 // Keep the splash screen visible while fonts load
 SplashScreen.preventAutoHideAsync();
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
 
-// Inner layout that handles fonts + auth redirect
+// Inner layout that handles fonts + auth & language redirect
 function AppLayout() {
   const { isLoaded, isSignedIn } = useAuth();
   const segments = useSegments();
   const router = useRouter();
-  const rootSegment = segments[0];
+  const rootSegment = segments[0] as string | undefined;
+
+  const { selectedLanguageId, hasHydrated } = useLanguageStore();
 
   const [fontsLoaded, fontError] = useFonts({
     Poppins_400Regular,
@@ -33,7 +37,7 @@ function AppLayout() {
     Poppins_700Bold,
   });
 
-  const ready = (fontsLoaded || !!fontError) && isLoaded;
+  const ready = (fontsLoaded || !!fontError) && isLoaded && hasHydrated;
 
   useEffect(() => {
     if (!ready) return;
@@ -42,16 +46,32 @@ function AppLayout() {
     const isAuthRoute =
       rootSegment === "sign-in" ||
       rootSegment === "sign-up" ||
+      rootSegment === "forgot-password" ||
       rootSegment === "onboarding";
 
-    if (isSignedIn && isAuthRoute) {
-      router.replace("/");
-    } else if (!isSignedIn && !isAuthRoute) {
-      router.replace("/onboarding");
-    }
-  }, [ready, isSignedIn, rootSegment, router]);
+    const isMainApp = rootSegment === "(tabs)";
 
-  // Don't render until fonts + Clerk are ready
+    if (!isSignedIn) {
+      if (!isAuthRoute) {
+        router.replace("/onboarding");
+      }
+    } else {
+      // User is signed in
+      if (!selectedLanguageId) {
+        // Authenticated user has no selected language -> route to /language-selection
+        if (rootSegment !== "language-selection") {
+          router.replace("/language-selection");
+        }
+      } else {
+        // Authenticated user has selected a language
+        if (isAuthRoute || (!isMainApp && rootSegment !== "language-selection")) {
+          router.replace("/(tabs)/");
+        }
+      }
+    }
+  }, [ready, isSignedIn, selectedLanguageId, rootSegment, router]);
+
+  // Don't render until fonts + Clerk + storage are ready
   if (!ready) return null;
 
   return <Slot />;

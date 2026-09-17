@@ -1,5 +1,6 @@
-import { useRef, useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -8,7 +9,6 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  ActivityIndicator,
 } from "react-native";
 
 interface Props {
@@ -34,15 +34,13 @@ export default function VerificationModal({
   isLoading = false,
 }: Props) {
   const [code, setCode] = useState<string[]>(Array(CODE_LENGTH).fill(""));
-  const inputRefs = useRef<(TextInput | null)[]>(
-    Array(CODE_LENGTH).fill(null)
-  );
+  const inputRefs = useRef<(TextInput | null)[]>(Array(CODE_LENGTH).fill(null));
 
   // Reset code when modal opens and focus first input
   useEffect(() => {
     if (visible) {
-      setCode(Array(CODE_LENGTH).fill(""));
       const timer = setTimeout(() => {
+        setCode(Array(CODE_LENGTH).fill(""));
         inputRefs.current[0]?.focus();
       }, 50);
       return () => clearTimeout(timer);
@@ -79,7 +77,10 @@ export default function VerificationModal({
     }
   };
 
-  const handleKeyPress = (e: { nativeEvent: { key: string } }, index: number) => {
+  const handleKeyPress = (
+    e: { nativeEvent: { key: string } },
+    index: number,
+  ) => {
     if (isLoading) return;
     if (e.nativeEvent.key === "Backspace" && !code[index] && index > 0) {
       const newCode = [...code];
