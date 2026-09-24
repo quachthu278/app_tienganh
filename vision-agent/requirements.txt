@@ -1,0 +1,6 @@
+vision-agents
+vision-agents-plugins-gemini
+vision-agents-plugins-getstream
+google-genai
+python-dotenv
+websockets
