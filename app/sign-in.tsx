@@ -2,6 +2,8 @@ import { useClerk, useSignIn } from "@clerk/expo";
 import { useSSO } from "@clerk/expo/experimental";
 import * as WebBrowser from "expo-web-browser";
 import { images } from "@/constants/images";
+import { posthog } from "@/src/config/posthog";
+import { useLanguageStore } from "@/store";
 import { router } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import {
@@ -39,7 +41,7 @@ export default function SignInScreen() {
   // Tracks which factor is currently awaiting verification so handleVerify
   // and handleResend use the correct SDK method.
   const [activeFactorStrategy, setActiveFactorStrategy] = useState<
-    "email_code" | "phone_code" | "totp" | "backup_code" | null
+    "email_code" | "phone_code" | "totp" | "backup_code" | "mfa_email_code" | null
   >(null);
 
   // ── Social Auth ──
@@ -48,12 +50,21 @@ export default function SignInScreen() {
   ) => {
     setIsSocialSubmitting(true);
     try {
-      const { createdSessionId, setActive } = await startSSOFlow({ strategy });
-      if (createdSessionId && setActive) {
-        await setActive({ session: createdSessionId });
-        router.replace("/");
+      const res = (await startSSOFlow({ strategy })) as any;
+      const sessionId = res?.createdSessionId;
+      if (sessionId && setActive) {
+        await setActive({ session: sessionId });
+        posthog?.capture("user_signed_in", {
+          auth_method: strategy.replace("oauth_", ""),
+        });
+        const currentLang = useLanguageStore.getState().selectedLanguageId;
+        router.replace(currentLang ? ("/(tabs)" as any) : "/language-selection");
       }
     } catch (err: unknown) {
+      posthog?.captureException(
+        err instanceof Error ? err : new Error("Social sign-in failed"),
+        { flow: "sign_in", auth_method: strategy.replace("oauth_", "") },
+      );
       const message =
         err instanceof Error ? err.message : "Social sign-in failed.";
       Alert.alert("Social Sign In", message);
@@ -72,7 +83,7 @@ export default function SignInScreen() {
 
     setIsSubmitting(true);
     try {
-      // Authenticate with email & password using Clerk
+      // Authenticate with email & password using Clerk Core 3 API
       const { error: signInError } = await signIn.password({
         identifier: email.trim(),
         password,
@@ -86,18 +97,20 @@ export default function SignInScreen() {
         return;
       }
 
-      // Check sign-in status
+      // Check sign-in status from the signIn object
       if (signIn.status === "complete") {
         if (signIn.createdSessionId && setActive) {
           await setActive({ session: signIn.createdSessionId });
-        } else {
+        } else if (signIn.finalize) {
           await signIn.finalize();
         }
-        router.replace("/");
+        posthog?.capture("user_signed_in", { auth_method: "password" });
+        const currentLang = useLanguageStore.getState().selectedLanguageId;
+        router.replace(currentLang ? ("/(tabs)" as any) : "/language-selection");
       } else if (signIn.status === "needs_first_factor") {
         // Select the email_code factor from the supported list.
         const emailFactor = signIn.supportedFirstFactors?.find(
-          (f) => f.strategy === "email_code"
+          (f: any) => f.strategy === "email_code"
         );
         if (!emailFactor) {
           Alert.alert(
@@ -117,7 +130,7 @@ export default function SignInScreen() {
         // Dispatch the correct MFA send method based on the first supported
         // second factor. Supported: totp, phone_code, backup_code.
         const secondFactor = signIn.supportedSecondFactors?.[0];
-        const strategy = secondFactor?.strategy;
+        const strategy = (secondFactor as any)?.strategy;
 
         if (strategy === "phone_code") {
           const { error: sendError } = await signIn.mfa.sendPhoneCode();
@@ -127,7 +140,6 @@ export default function SignInScreen() {
           }
           setActiveFactorStrategy("phone_code");
         } else if (strategy === "totp") {
-          // TOTP doesn't require a send step; show the input immediately.
           setActiveFactorStrategy("totp");
         } else if (strategy === "backup_code") {
           setActiveFactorStrategy("backup_code");
@@ -141,6 +153,10 @@ export default function SignInScreen() {
         setShowVerification(true);
       }
     } catch (err: unknown) {
+      posthog?.captureException(
+        err instanceof Error ? err : new Error("Password sign-in failed"),
+        { flow: "sign_in", auth_method: "password" },
+      );
       const message =
         err instanceof Error ? err.message : "Something went wrong. Try again.";
       Alert.alert("Sign In Failed", message);
@@ -152,22 +168,27 @@ export default function SignInScreen() {
   // ── Step 2: Verify the code using the correct factor method ──
   const handleVerify = useCallback(
     async (code: string) => {
-      if (!signIn || isVerifyingRef.current || code.length < 6) return;
+      if (!signIn || isVerifyingRef.current) return;
+      if (activeFactorStrategy !== "backup_code" && code.length < 6) return;
 
       isVerifyingRef.current = true;
       setIsVerifying(true);
       setVerifyError("");
       try {
-        let verifyErr: { longMessage?: string; message?: string } | null = null;
+        let verifyErr: any = null;
 
         if (activeFactorStrategy === "email_code") {
-          ({ error: verifyErr } = await signIn.emailCode.verifyCode({ code }));
+          const res = await signIn.emailCode.verifyCode({ code });
+          verifyErr = res.error;
         } else if (activeFactorStrategy === "phone_code") {
-          ({ error: verifyErr } = await signIn.mfa.verifyPhoneCode({ code }));
+          const res = await signIn.mfa.verifyPhoneCode({ code });
+          verifyErr = res.error;
         } else if (activeFactorStrategy === "totp") {
-          ({ error: verifyErr } = await signIn.mfa.verifyTOTP({ code }));
+          const res = await signIn.mfa.verifyTOTP({ code });
+          verifyErr = res.error;
         } else if (activeFactorStrategy === "backup_code") {
-          ({ error: verifyErr } = await signIn.mfa.verifyBackupCode({ code }));
+          const res = await signIn.mfa.verifyBackupCode({ code });
+          verifyErr = res.error;
         } else {
           setVerifyError("No verification factor selected. Please try signing in again.");
           return;
@@ -175,63 +196,69 @@ export default function SignInScreen() {
 
         if (verifyErr) {
           setVerifyError(
-            verifyErr.longMessage || verifyErr.message || "Invalid code."
+            verifyErr.longMessage || verifyErr.message || "Invalid code. Please try again."
           );
           return;
         }
 
-        // Finalize sign-in — creates the session automatically
-        const { error: finalizeError } = await signIn.finalize();
-        if (finalizeError) {
-          setVerifyError(
-            finalizeError.longMessage ||
-              finalizeError.message ||
-              "Could not complete sign-in."
-          );
-          return;
+        if (signIn.status === "complete") {
+          if (signIn.createdSessionId && setActive) {
+            await setActive({ session: signIn.createdSessionId });
+          } else if (signIn.finalize) {
+            await signIn.finalize();
+          }
+          posthog?.capture("user_signed_in", {
+            auth_method: activeFactorStrategy ?? "verification",
+          });
+          setShowVerification(false);
+          const currentLang = useLanguageStore.getState().selectedLanguageId;
+          router.replace(currentLang ? ("/(tabs)" as any) : "/language-selection");
+        } else {
+          setVerifyError("Verification incomplete. Please try again.");
         }
-
-        // Session is now active — navigate home
-        setShowVerification(false);
-        router.replace("/");
       } catch (err: unknown) {
-        const message =
-          err instanceof Error
-            ? err.message
-            : "Invalid code. Please try again.";
+        posthog?.captureException(
+          err instanceof Error ? err : new Error("Sign-in verification failed"),
+          { flow: "sign_in_verification", factor: activeFactorStrategy },
+        );
+        const clerkError = (err as any)?.errors?.[0];
+        const message = clerkError?.longMessage || clerkError?.message ||
+          (err instanceof Error ? err.message : "Invalid code. Please try again.");
         setVerifyError(message);
       } finally {
         isVerifyingRef.current = false;
         setIsVerifying(false);
       }
     },
-    [signIn, activeFactorStrategy]
+    [signIn, activeFactorStrategy, setActive]
   );
 
   // ── Resend verification code (only applicable for email_code / phone_code) ──
   const handleResend = useCallback(async () => {
     if (!signIn || isVerifyingRef.current) return;
-    if (activeFactorStrategy === "email_code") {
-      const { error } = await signIn.emailCode.sendCode();
-      if (error) {
-        Alert.alert("Error", error.longMessage || error.message || "Failed to resend code.");
+    try {
+      if (activeFactorStrategy === "email_code") {
+        const { error } = await signIn.emailCode.sendCode();
+        if (error) {
+          Alert.alert("Error", error.longMessage || error.message || "Failed to resend code.");
+        }
+      } else if (activeFactorStrategy === "phone_code") {
+        const { error } = await signIn.mfa.sendPhoneCode();
+        if (error) {
+          Alert.alert("Error", error.longMessage || error.message || "Failed to resend code.");
+        }
       }
-    } else if (activeFactorStrategy === "phone_code") {
-      const { error } = await signIn.mfa.sendPhoneCode();
-      if (error) {
-        Alert.alert("Error", error.longMessage || error.message || "Failed to resend code.");
-      }
+      // TOTP and backup_code have no resend step.
+    } catch (err: unknown) {
+      const clerkError = (err as any)?.errors?.[0];
+      const message = clerkError?.longMessage || clerkError?.message || "Failed to resend code.";
+      Alert.alert("Error", message);
     }
-    // TOTP and backup_code have no resend step.
   }, [signIn, activeFactorStrategy]);
 
   // ── Safe back navigation ──
   const handleBack = useCallback(() => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace("/onboarding");
-    }
+    router.replace("/onboarding");
   }, []);
 
   return (

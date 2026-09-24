@@ -11,28 +11,61 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useUser } from "@clerk/expo";
 import { router } from "expo-router";
 import { useLanguageStore, useProgressStore } from "@/store";
-import { SUPPORTED_LANGUAGES } from "@/data/languages";
+import { DEFAULT_LANGUAGE_ID, SUPPORTED_LANGUAGES, getLanguageFlagUrl } from "@/data/languages";
 import { LESSONS } from "@/data/lessons";
+import { getUnitsByLanguage } from "@/data/units";
+import {
+  getUnitDisplayTitle,
+  getLessonDisplayTitle,
+  getLanguageDisplayName,
+} from "@/data";
 import { images } from "@/constants/images";
+import { I18N } from "@/constants/i18n";
+import { posthog } from "@/src/config/posthog";
+
+const LANGUAGE_GREETINGS: Record<string, string> = {
+  es: "Hola",
+  fr: "Bonjour",
+  ja: "Konnichiwa",
+  ko: "Annyeong",
+  de: "Hallo",
+  zh: "Nǐ Hǎo",
+  en: "Hello",
+  vi: "Xin chào",
+};
 
 export default function HomeScreen() {
   const { user } = useUser();
-  const { selectedLanguageId } = useLanguageStore();
+  const { selectedLanguageId, selectedUnitId, appInterfaceLanguage } = useLanguageStore();
   const { xp, dailyXpGoal, streak, completedLessonIds } = useProgressStore();
 
-  const language = SUPPORTED_LANGUAGES.find((l) => l.id === selectedLanguageId);
-  const firstName = user?.firstName ?? user?.username ?? "Learner";
+  const t = I18N[appInterfaceLanguage || "vi"];
+
+  const currentLangId = selectedLanguageId || DEFAULT_LANGUAGE_ID;
+  const language = SUPPORTED_LANGUAGES.find((l) => l.id === currentLangId);
+  const userName = user?.firstName || user?.username || "Learner";
+  const greeting = (currentLangId && LANGUAGE_GREETINGS[currentLangId]) || "Hello";
+  const flagUrl = getLanguageFlagUrl(language);
   const xpProgress = Math.min(xp / dailyXpGoal, 1);
 
-  // Derive lessons for the selected language
+  // Derive units and current unit
+  const units = getUnitsByLanguage(currentLangId);
+  const currentUnit =
+    (selectedUnitId && units.find((u) => u.id === selectedUnitId)) || units[0];
+
+  // Derive lessons for current unit or language
+  const unitLessons = currentUnit
+    ? LESSONS.filter((l) => l.unitId === currentUnit.id)
+    : [];
+
   const languageLessons = selectedLanguageId
     ? LESSONS.filter((l) => l.unitId.startsWith(`unit-${selectedLanguageId}`))
     : [];
 
-  // Next incomplete lesson — drives the Continue button
-  const nextLesson = languageLessons.find(
-    (l) => !completedLessonIds.includes(l.id)
-  );
+  // Next incomplete lesson in current unit (or language) — drives the Continue button
+  const nextLesson =
+    unitLessons.find((l) => !completedLessonIds.includes(l.id)) ||
+    languageLessons.find((l) => !completedLessonIds.includes(l.id));
 
   // Derive today's plan from actual lesson data so it reflects the selected
   // language instead of hardcoded Spanish values.
@@ -40,29 +73,44 @@ export default function HomeScreen() {
   const aiLesson = languageLessons.find((l) => l.type === "audio_ai");
   const vocabCount = standardLesson?.vocabulary.length ?? 10;
 
+  const handleLessonStart = (lessonId: string) => {
+    posthog?.capture("lesson_started", {
+      lesson_id: lessonId,
+      language_id: selectedLanguageId,
+    });
+    router.push({
+      pathname: "/lesson/[id]",
+      params: { id: lessonId },
+    } as any);
+  };
+
   const todayPlan = [
     {
       id: "plan-1",
       icon: "📖",
       iconBg: "#6C4EF5",
-      title: "Lesson",
-      subtitle: standardLesson?.title ?? "Start your first lesson",
+      title: t.planLesson,
+      subtitle: standardLesson
+        ? getLessonDisplayTitle(standardLesson, appInterfaceLanguage)
+        : "Start your first lesson",
       lessonId: standardLesson?.id ?? null,
     },
     {
       id: "plan-2",
       icon: "🎧",
       iconBg: "#6C4EF5",
-      title: "AI Conversation",
-      subtitle: aiLesson?.title ?? "Practice speaking",
+      title: t.planAIConversation,
+      subtitle: aiLesson
+        ? getLessonDisplayTitle(aiLesson, appInterfaceLanguage)
+        : "Practice speaking",
       lessonId: aiLesson?.id ?? null,
     },
     {
       id: "plan-3",
       icon: "💬",
       iconBg: "#EF4444",
-      title: "New words",
-      subtitle: `${vocabCount} words`,
+      title: t.planNewWords,
+      subtitle: `${vocabCount} ${appInterfaceLanguage === "en" ? "words" : "từ vựng"}`,
       lessonId: null,
     },
   ];
@@ -80,11 +128,21 @@ export default function HomeScreen() {
         <View className="flex-row items-center justify-between px-5 pt-2 pb-4">
           {/* Left: Flag + Greeting */}
           <View className="flex-row items-center gap-3">
-            <View className="w-11 h-11 rounded-full bg-[#F3F4F6] items-center justify-center overflow-hidden">
-              <Text className="text-2xl">{language?.flag ?? "🌍"}</Text>
-            </View>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => router.push("/language-selection" as any)}
+              className="w-8 h-8 rounded-full overflow-hidden bg-[#F3F4F6] items-center justify-center"
+              style={styles.headerFlagContainer}
+            >
+              <Image
+                source={{ uri: flagUrl }}
+                className="w-8 h-8 rounded-full overflow-hidden"
+                style={styles.headerFlag}
+                resizeMode="cover"
+              />
+            </TouchableOpacity>
             <Text className="font-[Poppins_500Medium] text-base text-[#0D132B]">
-              Hola, {firstName}! 👋
+              {greeting}, {userName || "Learner"}! 👋
             </Text>
           </View>
 
@@ -118,7 +176,7 @@ export default function HomeScreen() {
         >
           <View className="flex-1 pr-4">
             <Text className="font-[Poppins_500Medium] text-[13px] text-[#6B7280]">
-              Daily goal
+              {t.dailyGoal}
             </Text>
             <View className="flex-row items-baseline gap-1 mt-1">
               <Text className="font-[Poppins_700Bold] text-[32px] text-[#0D132B] leading-10">
@@ -152,30 +210,35 @@ export default function HomeScreen() {
           {/* Text Side */}
           <View className="flex-1 pr-2 justify-center">
             <Text className="font-[Poppins_400Regular] text-[13px] text-white/85 mb-0.5">
-              Continue learning
+              {t.continueLesson}
             </Text>
             <Text className="font-[Poppins_700Bold] text-[28px] text-white leading-9">
-              {language?.name ?? "Spanish"}
+              {getLanguageDisplayName(language, appInterfaceLanguage)}
             </Text>
-            <Text className="font-[Poppins_400Regular] text-[13px] text-white/80 mb-[14px]">
-              A1 • Unit 3
-            </Text>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => router.push("/(tabs)/learn" as any)}
+            >
+              <Text className="font-[Poppins_400Regular] text-[13px] text-white/80 mb-[14px]">
+                {currentUnit?.order && currentUnit.order > 6 ? "A2" : "A1"} • {t.unitTitle} {currentUnit?.order ?? 1}: {getUnitDisplayTitle(currentUnit, appInterfaceLanguage)} ▾
+              </Text>
+            </TouchableOpacity>
             {/* Show Continue only when an incomplete lesson exists */}
             {nextLesson ? (
               <TouchableOpacity
                 className="bg-white rounded-3xl py-[10px] px-6 self-start"
                 style={styles.continueButtonShadow}
                 activeOpacity={0.85}
-                onPress={() => router.push(`/lesson/${nextLesson.id}`)}
+                onPress={() => handleLessonStart(nextLesson.id)}
               >
                 <Text className="font-[Poppins_600SemiBold] text-[14px] text-[#6C4EF5]">
-                  Continue
+                  {t.continue}
                 </Text>
               </TouchableOpacity>
             ) : (
               <View className="bg-white/40 rounded-3xl py-[10px] px-6 self-start">
                 <Text className="font-[Poppins_600SemiBold] text-[14px] text-white/70">
-                  All done! 🎉
+                  {t.completed} 🎉
                 </Text>
               </View>
             )}
@@ -194,8 +257,7 @@ export default function HomeScreen() {
           {/* Section Header */}
           <View className="flex-row items-center justify-between mb-3">
             <Text className="font-[Poppins_700Bold] text-[17px] text-[#0D132B]">
-              {/* &apos; satisfies react/no-unescaped-entities */}
-              Today&apos;s plan
+              {t.todaysPlan}
             </Text>
             <TouchableOpacity activeOpacity={0.7}>
               <Text className="font-[Poppins_600SemiBold] text-[14px] text-[#6C4EF5]">
@@ -314,5 +376,16 @@ const styles = StyleSheet.create({
     width: 130,
     height: 140,
     marginRight: -10,
+  },
+  headerFlagContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+  headerFlag: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
   },
 });

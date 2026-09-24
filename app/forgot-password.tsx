@@ -1,5 +1,6 @@
 import { useClerk, useSignIn } from "@clerk/expo";
 import { images } from "@/constants/images";
+import { posthog } from "@/src/config/posthog";
 import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -202,6 +203,9 @@ export default function ForgotPasswordScreen() {
           await signIn.finalize();
         }
 
+        posthog?.capture("password_reset_completed", {
+          auth_method: "email_code",
+        });
         Alert.alert("Success", "Your password has been reset successfully!", [
           {
             text: "Continue",
@@ -212,6 +216,10 @@ export default function ForgotPasswordScreen() {
         router.replace("/sign-in");
       }
     } catch (err: unknown) {
+      posthog?.captureException(
+        err instanceof Error ? err : new Error("Password reset failed"),
+        { flow: "password_reset" },
+      );
       const message =
         err instanceof Error
           ? err.message

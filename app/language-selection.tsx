@@ -1,5 +1,6 @@
 import LanguageCard from "@/components/LanguageCard";
 import { images } from "@/constants/images";
+import { posthog } from "@/src/config/posthog";
 import { DEFAULT_LANGUAGE_ID, SUPPORTED_LANGUAGES } from "@/data/languages";
 import { Language, LanguageCode } from "@/types/learning";
 import { useRouter } from "expo-router";
@@ -35,18 +36,29 @@ export default function LanguageSelectionScreen() {
   // Search input state
   const [searchQuery, setSearchQuery] = useState("");
 
+  const confirmSelection = () => {
+    setSelectedLanguage(selectedLanguageId);
+    const langObj = SUPPORTED_LANGUAGES.find((l) => l.id === selectedLanguageId);
+    posthog?.capture("language_selected", {
+      language_code: selectedLanguageId,
+      language_name: langObj?.name || selectedLanguageId,
+      language_id: selectedLanguageId,
+      is_initial_selection: !storedLanguageId,
+    });
+  };
+
   // Safe back navigation
   const handleBack = () => {
     if (storedLanguageId) {
       if (router.canGoBack()) {
         router.back();
       } else {
-        router.replace("/(tabs)/");
+        router.replace("/(tabs)" as any);
       }
     } else {
       // If user has not confirmed a language yet, confirm current selection before proceeding to '/'
-      setSelectedLanguage(selectedLanguageId);
-      router.replace("/(tabs)/");
+      confirmSelection();
+      router.replace("/(tabs)" as any);
     }
   };
 
@@ -57,8 +69,8 @@ export default function LanguageSelectionScreen() {
 
   // Confirm selection & proceed
   const handleConfirm = () => {
-    setSelectedLanguage(selectedLanguageId);
-    router.replace("/(tabs)/");
+    confirmSelection();
+    router.replace("/(tabs)" as any);
   };
 
   // Filter languages based on user search query

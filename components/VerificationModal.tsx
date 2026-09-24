@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 
-type FactorStrategy = "email_code" | "phone_code" | "totp" | "backup_code";
+type FactorStrategy = "email_code" | "mfa_email_code" | "phone_code" | "totp" | "backup_code";
 
 interface Props {
   visible: boolean;
@@ -52,6 +52,12 @@ export default function VerificationModal({
       subtitle:
         "We sent a verification code to your email. Enter the 6-digit code below.",
     },
+    mfa_email_code: {
+      icon: "📧",
+      title: "Check your email",
+      subtitle:
+        "We sent a verification code to your email. Enter the 6-digit code below.",
+    },
     phone_code: {
       icon: "📱",
       title: "Check your phone",
@@ -73,20 +79,30 @@ export default function VerificationModal({
   };
   const { icon, title, subtitle } = factorContent[factorStrategy];
 
-  // Only email_code and phone_code support a resend action
   const canResend =
-    factorStrategy === "email_code" || factorStrategy === "phone_code";
+    factorStrategy === "email_code" || factorStrategy === "mfa_email_code" || factorStrategy === "phone_code";
+
+  const isBackupCode = factorStrategy === "backup_code";
+  const [backupCodeText, setBackupCodeText] = useState("");
+
+  const handleBackupCodeSubmit = () => {
+    if (!backupCodeText.trim() || isLoading) return;
+    onVerify(backupCodeText.trim());
+  };
 
   // Reset code when modal opens and focus first input
   useEffect(() => {
     if (visible) {
       const timer = setTimeout(() => {
         setCode(Array(CODE_LENGTH).fill(""));
-        inputRefs.current[0]?.focus();
+        setBackupCodeText("");
+        if (!isBackupCode) {
+          inputRefs.current[0]?.focus();
+        }
       }, 50);
       return () => clearTimeout(timer);
     }
-  }, [visible]);
+  }, [visible, isBackupCode]);
 
   const handleChange = (text: string, index: number) => {
     if (isLoading) return;
@@ -134,7 +150,10 @@ export default function VerificationModal({
   const handleResend = async () => {
     if (isLoading) return;
     setCode(Array(CODE_LENGTH).fill(""));
-    inputRefs.current[0]?.focus();
+    setBackupCodeText("");
+    if (!isBackupCode) {
+      inputRefs.current[0]?.focus();
+    }
     await onResend?.();
   };
 
@@ -169,32 +188,55 @@ export default function VerificationModal({
           <Text style={styles.subtitle}>{subtitle}</Text>
 
           {/* Code inputs */}
-          <View style={styles.codeRow}>
-            {Array(CODE_LENGTH)
-              .fill(0)
-              .map((_, i) => (
-                <TextInput
-                  key={i}
-                  ref={(ref) => {
-                    inputRefs.current[i] = ref;
-                  }}
-                  style={[
-                    styles.codeBox,
-                    code[i] ? styles.codeBoxFilled : null,
-                    error ? styles.codeBoxError : null,
-                  ]}
-                  value={code[i]}
-                  onChangeText={(text) => handleChange(text, i)}
-                  onKeyPress={(e) => handleKeyPress(e, i)}
-                  keyboardType="number-pad"
-                  maxLength={1}
-                  selectTextOnFocus
-                  textAlign="center"
-                  caretHidden
-                  editable={!isLoading}
-                />
-              ))}
-          </View>
+          {isBackupCode ? (
+            <View style={styles.backupCodeContainer}>
+              <TextInput
+                style={[styles.backupCodeInput, error ? styles.codeBoxError : null]}
+                value={backupCodeText}
+                onChangeText={setBackupCodeText}
+                placeholder="Enter backup code"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!isLoading}
+                onSubmitEditing={handleBackupCodeSubmit}
+                returnKeyType="done"
+              />
+              <TouchableOpacity
+                style={styles.backupCodeSubmit}
+                onPress={handleBackupCodeSubmit}
+                disabled={!backupCodeText.trim() || isLoading}
+              >
+                <Text style={styles.backupCodeSubmitText}>Verify</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.codeRow}>
+              {Array(CODE_LENGTH)
+                .fill(0)
+                .map((_, i) => (
+                  <TextInput
+                    key={i}
+                    ref={(ref) => {
+                      inputRefs.current[i] = ref;
+                    }}
+                    style={[
+                      styles.codeBox,
+                      code[i] ? styles.codeBoxFilled : null,
+                      error ? styles.codeBoxError : null,
+                    ]}
+                    value={code[i]}
+                    onChangeText={(text) => handleChange(text, i)}
+                    onKeyPress={(e) => handleKeyPress(e, i)}
+                    keyboardType="number-pad"
+                    maxLength={1}
+                    selectTextOnFocus
+                    textAlign="center"
+                    caretHidden
+                    editable={!isLoading}
+                  />
+                ))}
+            </View>
+          )}
 
           {/* Loading indicator */}
           {isLoading && (
@@ -306,6 +348,36 @@ const styles = StyleSheet.create({
   codeBoxError: {
     borderColor: "#FF4D4F",
     backgroundColor: "#FFF0F0",
+  },
+  backupCodeContainer: {
+    width: "100%",
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
+  },
+  backupCodeInput: {
+    flex: 1,
+    height: 56,
+    borderWidth: 1.5,
+    borderColor: "#E5E7EB",
+    borderRadius: 12,
+    fontSize: 16,
+    fontFamily: "Poppins_400Regular",
+    color: "#0D132B",
+    backgroundColor: "#F6F7FB",
+    paddingHorizontal: 16,
+  },
+  backupCodeSubmit: {
+    height: 56,
+    backgroundColor: "#6C4EF5",
+    borderRadius: 12,
+    justifyContent: "center",
+    paddingHorizontal: 20,
+  },
+  backupCodeSubmitText: {
+    color: "#FFFFFF",
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 16,
   },
   loader: {
     marginBottom: 12,

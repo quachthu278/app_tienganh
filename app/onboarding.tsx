@@ -1,9 +1,15 @@
 import { images } from "@/constants/images";
+import { posthog } from "@/src/config/posthog";
 import { router } from "expo-router";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function OnboardingScreen() {
+  const handleGetStarted = () => {
+    posthog?.capture("onboarding_started");
+    router.push("/sign-up");
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
       {/* ── Logo Row ── */}
@@ -53,7 +59,7 @@ export default function OnboardingScreen() {
         <TouchableOpacity
           style={styles.ctaButton}
           activeOpacity={0.85}
-          onPress={() => router.push("/sign-up")}
+          onPress={handleGetStarted}
         >
           <Text style={styles.ctaLabel}>Get Started</Text>
           <Text style={styles.ctaArrow}>›</Text>

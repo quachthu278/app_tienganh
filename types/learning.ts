@@ -8,9 +8,14 @@ export interface Language {
   id: LanguageCode;
   name: string;
   nativeName: string;
-  flag: string; // Emoji or asset identifier
-  code: string;
+  flag: string; // Flag URL or asset identifier
+  code: string; // Language code
+  countryCode: string; // ISO 3166-1 alpha-2 country code: cn, us, vn, es, fr, jp, kr, de
+  flagUrl: string; // High-resolution flag image URL
+  flagEmoji?: string; // Emoji flag symbol
   description: string;
+  nameVi?: string;
+  descriptionVi?: string;
   totalUnits: number;
   totalLessons: number;
   learnersCount?: string;
@@ -43,17 +48,23 @@ export type ActivityType =
   | "fill_blank"
   | "match_pairs"
   | "audio_listen"
+  | "word_order"
   | "speak"
   | "ai_conversation";
+
+export type SkillType = "reading" | "writing" | "listening" | "speaking";
 
 export interface Activity {
   id: string;
   type: ActivityType;
+  skill?: SkillType;
   question: string;
   prompt?: string;
   options?: string[];
   correctAnswer: string | string[];
   audioText?: string;
+  readingPassage?: string;
+  wordBlocks?: string[];
   pairs?: { left: string; right: string }[];
   explanation?: string;
 }
@@ -78,7 +89,9 @@ export interface Lesson {
   id: string;
   unitId: string;
   title: string;
+  titleEn?: string;
   description: string;
+  descriptionEn?: string;
   type: LessonType;
   xp: number;
   estimatedMinutes: number;
@@ -88,14 +101,22 @@ export interface Lesson {
   phrases: Phrase[];
   activities: Activity[];
   aiTeacherPrompt?: AITeacherPrompt;
+  heroImage?: any;
+  thumbnailIcon?: any;
+  status?: "completed" | "in_progress" | "locked" | "available";
+  subLessonsCount?: number;
+  completedSubLessonsCount?: number;
 }
 
 export interface Unit {
   id: string;
   languageId: LanguageCode;
   title: string;
+  titleEn?: string;
   description: string;
+  descriptionEn?: string;
   order: number;
   color?: string;
+  icon?: string;
   lessonIds: string[];
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Animated,
   Dimensions,
@@ -9,8 +9,13 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { SymbolView } from "expo-symbols";
+
+interface CustomTabBarProps {
+  state: any;
+  descriptors: any;
+  navigation: any;
+}
 
 // Tab configuration — icon names map to SF Symbols (iOS) / fallback emoji (Android)
 const TAB_CONFIG: Record<
@@ -59,13 +64,13 @@ export default function CustomTabBar({
   state,
   descriptors,
   navigation,
-}: BottomTabBarProps) {
+}: CustomTabBarProps) {
   const insets = useSafeAreaInsets();
   const tabCount = state.routes.length;
   const tabWidth = SCREEN_WIDTH / tabCount;
 
   // Animated X position of the active circle
-  const circleX = useRef(new Animated.Value(state.index * tabWidth)).current;
+  const [circleX] = useState(() => new Animated.Value(state.index * tabWidth));
 
   useEffect(() => {
     Animated.spring(circleX, {
@@ -75,7 +80,7 @@ export default function CustomTabBar({
       stiffness: 180,
       mass: 0.8,
     }).start();
-  }, [state.index, tabWidth]);
+  }, [circleX, state.index, tabWidth]);
 
   const bottomPadding = insets.bottom;
 
@@ -109,7 +114,7 @@ export default function CustomTabBar({
       />
 
       {/* Tab buttons */}
-      {state.routes.map((route, index) => {
+      {state.routes.map((route: any, index: number) => {
         const isActive = state.index === index;
         const config = TAB_CONFIG[route.name] ?? {
           sfSymbol: "circle",
@@ -143,7 +148,7 @@ export default function CustomTabBar({
               {Platform.OS === "ios" ? (
                 <SymbolView
                   name={
-                    isActive ? config.sfSymbolFilled : config.sfSymbol
+                    (isActive ? config.sfSymbolFilled : config.sfSymbol) as any
                   }
                   size={isActive ? 22 : 20}
                   tintColor={isActive ? "#FFFFFF" : INACTIVE_COLOR}

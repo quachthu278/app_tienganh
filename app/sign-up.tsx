@@ -1,7 +1,9 @@
-import { useSignUp } from "@clerk/expo";
+import { useClerk, useSignUp } from "@clerk/expo";
 import { useSSO } from "@clerk/expo/experimental";
 import * as WebBrowser from "expo-web-browser";
 import { images } from "@/constants/images";
+import { posthog } from "@/src/config/posthog";
+import { useLanguageStore } from "@/store";
 import { router } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import {
@@ -24,6 +26,7 @@ WebBrowser.maybeCompleteAuthSession();
 
 export default function SignUpScreen() {
   const { signUp } = useSignUp();
+  const { setActive } = useClerk();
   const { startSSOFlow } = useSSO();
 
   const [email, setEmail] = useState("");
@@ -42,12 +45,21 @@ export default function SignUpScreen() {
   ) => {
     setIsSocialSubmitting(true);
     try {
-      const { createdSessionId, setActive } = await startSSOFlow({ strategy });
-      if (createdSessionId && setActive) {
-        await setActive({ session: createdSessionId });
-        router.replace("/");
+      const res = (await startSSOFlow({ strategy })) as any;
+      const sessionId = res?.createdSessionId;
+      if (sessionId && setActive) {
+        await setActive({ session: sessionId });
+        posthog?.capture("user_signed_up", {
+          auth_method: strategy.replace("oauth_", ""),
+        });
+        const currentLang = useLanguageStore.getState().selectedLanguageId;
+        router.replace(currentLang ? ("/(tabs)" as any) : "/language-selection");
       }
     } catch (err: unknown) {
+      posthog?.captureException(
+        err instanceof Error ? err : new Error("Social sign-up failed"),
+        { flow: "sign_up", auth_method: strategy.replace("oauth_", "") },
+      );
       const message =
         err instanceof Error ? err.message : "Social sign-up failed.";
       Alert.alert("Social Sign Up", message);
@@ -66,14 +78,17 @@ export default function SignUpScreen() {
 
     setIsSubmitting(true);
     try {
-      // Create sign-up with email + password
+      // Create sign-up with email + password using Core 3 API
       const { error: signUpError } = await signUp.password({
         emailAddress: email.trim(),
         password,
       });
 
       if (signUpError) {
-        Alert.alert("Sign Up Failed", signUpError.longMessage || signUpError.message);
+        Alert.alert(
+          "Sign Up Failed",
+          signUpError.longMessage || signUpError.message
+        );
         return;
       }
 
@@ -86,8 +101,15 @@ export default function SignUpScreen() {
 
       setShowVerification(true);
     } catch (err: unknown) {
+      posthog?.captureException(
+        err instanceof Error ? err : new Error("Password sign-up failed"),
+        { flow: "sign_up", auth_method: "password" },
+      );
+      const clerkError = (err as any)?.errors?.[0];
       const message =
-        err instanceof Error ? err.message : "Something went wrong. Try again.";
+        clerkError?.longMessage ||
+        clerkError?.message ||
+        (err instanceof Error ? err.message : "Something went wrong. Try again.");
       Alert.alert("Sign Up Failed", message);
     } finally {
       setIsSubmitting(false);
@@ -105,6 +127,7 @@ export default function SignUpScreen() {
       try {
         const { error: verifyError } =
           await signUp.verifications.verifyEmailCode({ code });
+
         if (verifyError) {
           setVerifyError(
             verifyError.longMessage || verifyError.message || "Invalid code."
@@ -113,52 +136,60 @@ export default function SignUpScreen() {
         }
 
         // Finalize sign-up and create the session
-        const { error: finalizeError } = await signUp.finalize();
-        if (finalizeError) {
-          setVerifyError(
-            finalizeError.longMessage ||
-              finalizeError.message ||
-              "Could not complete sign-up."
-          );
-          return;
+        if (signUp.status === "complete") {
+          if (signUp.createdSessionId && setActive) {
+            await setActive({ session: signUp.createdSessionId });
+          } else if (signUp.finalize) {
+            await signUp.finalize();
+          }
+          posthog?.capture("user_signed_up", { auth_method: "password" });
+          setShowVerification(false);
+          const currentLang = useLanguageStore.getState().selectedLanguageId;
+          router.replace(currentLang ? ("/(tabs)" as any) : "/language-selection");
+        } else {
+          setVerifyError("Verification incomplete. Please try again.");
         }
-
-        // Session is now active — navigate home
-        setShowVerification(false);
-        router.replace("/");
       } catch (err: unknown) {
+        posthog?.captureException(
+          err instanceof Error ? err : new Error("Sign-up verification failed"),
+          { flow: "sign_up_verification", auth_method: "password" },
+        );
+        const clerkError = (err as any)?.errors?.[0];
         const message =
-          err instanceof Error
-            ? err.message
-            : "Invalid code. Please try again.";
+          clerkError?.longMessage ||
+          clerkError?.message ||
+          (err instanceof Error ? err.message : "Invalid code. Please try again.");
         setVerifyError(message);
       } finally {
         isVerifyingRef.current = false;
         setIsVerifying(false);
       }
     },
-    [signUp]
+    [signUp, setActive]
   );
 
   // ── Resend verification code ──
   const handleResend = useCallback(async () => {
     if (!signUp || isVerifyingRef.current) return;
-    const { error } = await signUp.verifications.sendEmailCode();
-    if (error) {
-      Alert.alert(
-        "Error",
-        error.longMessage || error.message || "Failed to resend code."
-      );
+    try {
+      const { error } = await signUp.verifications.sendEmailCode();
+      if (error) {
+        Alert.alert(
+          "Error",
+          error.longMessage || error.message || "Failed to resend code."
+        );
+      }
+    } catch (err: unknown) {
+      const clerkError = (err as any)?.errors?.[0];
+      const message =
+        clerkError?.longMessage || clerkError?.message || "Failed to resend code.";
+      Alert.alert("Error", message);
     }
   }, [signUp]);
 
   // ── Safe back navigation ──
   const handleBack = useCallback(() => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace("/onboarding");
-    }
+    router.replace("/onboarding");
   }, []);
 
   return (
